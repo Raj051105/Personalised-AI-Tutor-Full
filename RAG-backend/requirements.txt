@@ -1,0 +1,37 @@
+# Web Framework
+fastapi
+
+# Core RAG Components
+langchain
+langchain-chroma
+langchain-huggingface
+chromadb
+
+# Embeddings and ML
+sentence-transformers
+torch
+transformers
+
+# PDF Processing
+pypdf
+pytesseract
+pdf2image
+
+# OCR and Image Processing
+Pillow
+
+# File Upload Support
+python-multipart
+
+# HTTP Requests (if needed for Ollama API)
+requests
+
+# Path and File Operations
+pathlib2
+
+# Environment Variables (optional)
+python-dotenv
+
+# Development and Testing (optional)
+pytest
+pytest-asyncio
