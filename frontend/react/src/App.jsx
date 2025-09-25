@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './Pages/Login';
 import Dashboard from './Pages/Dashboard';
 import Subject from './Pages/Subject';
+import Quiz from './Pages/Quiz';
+import Flipcards from './Pages/Flipcards';
 import { useContext } from 'react';
 import { UserContext } from './Context/userContext';
 import UserProvider from './Context/userContext';
@@ -25,6 +27,8 @@ const App = () => {
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/subject" element={<ProtectedRoute><Subject /></ProtectedRoute>} />
+          <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
+          <Route path="/flipcards" element={<ProtectedRoute><Flipcards /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

@@ -74,6 +74,7 @@ def generate_mcqs_api(subject_code: str, query: str):
 
     context = get_context_scoped(query, subject_code, k=8, sources=["notes", "syllabus"])
     mcqs = generate_mcqs({"subject_code": subject_code}, context) or []
+    print(mcqs)
     return {"subject_code": subject_code, "mcqs": mcqs}
 
 @app.post("/generate/flashcards/{subject_code}")
