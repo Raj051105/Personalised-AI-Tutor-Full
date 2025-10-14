@@ -15,7 +15,7 @@ const Flipcards = ({
 
   const handleCardClick = (index) => {
     setSelectedCard(index);
-    setFlipped(true); // Show answer directly when card is clicked
+    setFlipped(true);
   };
 
   const closeModal = () => {
@@ -27,22 +27,24 @@ const Flipcards = ({
 
   return (
     <div className="relative">
-      {/* Grid Layout - Blurred when modal is open */}
+      {/* Grid Layout */}
       <div className={`transition-all duration-300 ${selectedCard !== null ? 'blur-sm' : ''}`}>
         <div className="w-full p-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Flipcards Study Session</h2>
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+            Flipcards Study Session
+          </h2>
           <div className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {qaList.map((qa, index) => (
               <div
                 key={index}
-                className="w-full bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-4 border border-blue-200 cursor-pointer hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+                className="w-full bg-white rounded-xl p-4 border border-[#730FFF] cursor-pointer hover:shadow-lg transform hover:scale-105 transition-all duration-200"
                 onClick={() => handleCardClick(index)}
               >
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-500 rounded-full mb-3">
+                  <div className="inline-flex items-center justify-center w-8 h-8 bg-[#730FFF] rounded-full mb-3">
                     <span className="text-white font-bold text-sm">{index + 1}</span>
                   </div>
-                  <div className="text-xs text-gray-500 mb-2">Question</div>
+                  <div className="text-xs text-gray-500 mb-2 font-semibold">Question</div>
                   <p className="text-sm text-gray-700 font-medium line-clamp-3">
                     {qa.question.length > 50 ? qa.question.substring(0, 50) + "..." : qa.question}
                   </p>
@@ -86,32 +88,32 @@ const Flipcards = ({
               aria-pressed={flipped}
             >
               {/* Front */}
-              <div className="absolute w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl shadow-xl border border-blue-200 flex flex-col justify-center p-8 [backface-visibility:hidden]">
+              <div className="absolute w-full h-full bg-white rounded-2xl shadow-xl border border-[#730FFF] flex flex-col justify-center p-8 [backface-visibility:hidden]">
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-500 rounded-full mb-4">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-[#730FFF] rounded-full mb-4">
                     <span className="text-white font-bold">Q</span>
                   </div>
                   <h3 className="text-xl font-bold text-gray-800 mb-4">Question</h3>
                   <p className="text-gray-700 text-lg leading-relaxed">{selectedQA?.question}</p>
                 </div>
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-                  <span className="text-sm text-blue-500 bg-white px-3 py-1 rounded-full shadow">
+                  <span className="text-sm text-[#730FFF] bg-white px-3 py-1 rounded-full shadow font-semibold">
                     Click to reveal answer
                   </span>
                 </div>
               </div>
 
               {/* Back */}
-              <div className="absolute w-full h-full bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl shadow-xl border border-green-200 flex flex-col justify-center p-8 [transform:rotateY(180deg)] [backface-visibility:hidden]">
+              <div className="absolute w-full h-full bg-white rounded-2xl shadow-xl border border-[#730FFF] flex flex-col justify-center p-8 [transform:rotateY(180deg)] [backface-visibility:hidden]">
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-12 h-12 bg-green-500 rounded-full mb-4">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-[#730FFF] rounded-full mb-4">
                     <span className="text-white font-bold">A</span>
                   </div>
                   <h3 className="text-xl font-bold text-gray-800 mb-4">Answer</h3>
                   <p className="text-gray-700 text-lg leading-relaxed">{selectedQA?.answer}</p>
                 </div>
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-                  <span className="text-sm text-green-500 bg-white px-3 py-1 rounded-full shadow">
+                  <span className="text-sm text-[#730FFF] bg-white px-3 py-1 rounded-full shadow font-semibold">
                     Click to see question
                   </span>
                 </div>
@@ -124,11 +126,11 @@ const Flipcards = ({
                 onClick={() => {
                   if (selectedCard > 0) {
                     setSelectedCard(selectedCard - 1);
-                    setFlipped(false); // Show answer for previous card
+                    setFlipped(false);
                   }
                 }}
                 disabled={selectedCard === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-100 disabled:bg-gray-200 disabled:text-gray-400 text-gray-700 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-100 disabled:bg-gray-200 disabled:text-gray-400 text-gray-700 rounded-lg transition-colors border border-[#730FFF] font-semibold"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -140,11 +142,11 @@ const Flipcards = ({
                 onClick={() => {
                   if (selectedCard < qaList.length - 1) {
                     setSelectedCard(selectedCard + 1);
-                    setFlipped(false); // Show answer for next card
+                    setFlipped(false);
                   }
                 }}
                 disabled={selectedCard === qaList.length - 1}
-                className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-100 disabled:bg-gray-200 disabled:text-gray-400 text-gray-700 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-[#730FFF] hover:bg-purple-800 text-white rounded-lg transition-colors font-semibold disabled:bg-gray-300"
               >
                 Next
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

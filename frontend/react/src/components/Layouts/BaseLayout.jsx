@@ -108,7 +108,7 @@ const BaseLayout = ({ user, children, active }) => {
   };
 
   return (
-    <div>
+    <div className="min-h-screen flex flex-col">
       <Navbar user={user} active={active} />
       
       {/* Error display */}
@@ -118,8 +118,8 @@ const BaseLayout = ({ user, children, active }) => {
         </div>
       )}
       
-      <div className='flex'>
-        <div className='w-[20%] pt-20'>
+      <div className='flex flex-1'>
+        <div className='w-[20%] pt-20 bg-white'>
           <div className='w-full px-5'>
             <h2 className='font-semibold text-xl'>Recent Files:</h2>
             
