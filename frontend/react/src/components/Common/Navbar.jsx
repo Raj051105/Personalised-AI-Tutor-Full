@@ -19,8 +19,8 @@ const Navbar = ({ user, active }) => {
             <ul className='flex items-center gap-8 text-lg font-semibold text-black'>
                 <li className={active === 'dashboard' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/dashboard')}>Dashboard</li>
                 <li className={active === 'subject' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/subject')}>Subject</li>
-                <li className={active === 'subject' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/quiz')}>Quiz</li>
-                <li className={active === 'subject' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/flipcards')}>Flipcards</li>
+                <li className={active === 'quiz' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/quiz')}>Quiz</li>
+                <li className={active === 'flipcards' ? 'text-[#730FFF] cursor-pointer' : 'cursor-pointer'} onClick={() => handleClick('/flipcards')}>Flipcards</li>
                 <li className='text-red-500 cursor-pointer' onClick={handleLogout}>Logout</li>
                 <li><div className='w-[40px] h-[40px] rounded-full border-2 border-[#730FFF] flex-center'>{getInitials(user.username)}</div></li>
             </ul>

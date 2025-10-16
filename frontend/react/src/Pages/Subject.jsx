@@ -8,12 +8,28 @@ import { API_PATH } from "../Utils/api_path";
 import axiosInstance from "../Utils/axiosInstance";
 
 const Subject = () => {
+  console.log("Subject component rendering");
+  
   const { user } = useContext(UserContext);
+  console.log("UserContext value:", { user });
+  
   const [query, setQuery] = useState("");
   const [subjects, setSubjects] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Component lifecycle and state changes
+  useEffect(() => {
+    console.log("Subject component mounted or updated");
+    console.log("Current state:", {
+      user,
+      subjects,
+      loading,
+      error,
+      isModalOpen
+    });
+  });
 
   const handleAddUnit = () => setIsModalOpen(true);
   const handleCloseModal = () => setIsModalOpen(false);
@@ -28,14 +44,33 @@ const Subject = () => {
   };
 
   const fetchSubjects = async () => {
+    console.log("fetchSubjects called");
     try {
       setLoading(true);
       setError(null);
 
+      const token = localStorage.getItem('token');
+      console.log("Authentication token present:", !!token);
+      console.log("API endpoint:", API_PATH.SUBJECT.GET_ALL);
+      console.log("Base URL:", axiosInstance.defaults.baseURL);
+      
       const response = await axiosInstance.get(API_PATH.SUBJECT.GET_ALL);
+      console.log("Raw API response:", {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+        headers: response.headers
+      });
+      
       let subjectsArr = [];
 
       if (response.data) {
+        console.log("Response data structure:", {
+          isArray: Array.isArray(response.data),
+          hasSubjects: Boolean(response.data.subjects),
+          type: typeof response.data
+        });
+
         if (Array.isArray(response.data.subjects)) {
           subjectsArr = response.data.subjects;
         } else if (Array.isArray(response.data)) {
@@ -48,6 +83,7 @@ const Subject = () => {
         }
       }
 
+      console.log("Processed subjects array:", subjectsArr);
       setSubjects(subjectsArr);
     } catch (err) {
       console.error("Fetch subjects error:", err);
@@ -78,22 +114,45 @@ const Subject = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (token) {
-      fetchSubjects();
-    } else {
-      setError("No authentication token found. Please login.");
+    console.log("Token:", token ? "Present" : "Missing");
+    console.log("User context:", user);
+    
+    if (!token || !user) {
+      setError("No authentication found. Please login.");
+      return;
     }
-  }, []);
+    
+    fetchSubjects();
+  }, [user]);
 
   const filteredSubjects = subjects.filter((subject) => {
-    const title = subject?.title?.toLowerCase() || "";
-    const description = subject?.description?.toLowerCase() || "";
-    const syllabus = subject?.syllabus?.toLowerCase() || "";
+    // Ensure we have a valid subject object
+    if (!subject) return false;
+
+    // Convert query to lowercase once
+    const queryLower = query.toLowerCase();
+    
+    // Safely handle each field, ensuring they're strings before calling toLowerCase()
+    const title = typeof subject.title === 'string' ? subject.title.toLowerCase() : '';
+    const description = typeof subject.description === 'string' ? subject.description.toLowerCase() : '';
+    
+    // Handle syllabus specifically since it might be an object or file
+    const syllabus = typeof subject.subject_code === 'string' ? subject.subject_code.toLowerCase() : 
+                     typeof subject.syllabus === 'string' ? subject.syllabus.toLowerCase() : '';
+
+    // Log the search data for debugging
+    console.log('Filtering subject:', {
+      id: subject._id,
+      title,
+      description,
+      syllabus,
+      originalSubject: subject
+    });
 
     return (
-      title.includes(query.toLowerCase()) ||
-      description.includes(query.toLowerCase()) ||
-      syllabus.includes(query.toLowerCase())
+      title.includes(queryLower) ||
+      description.includes(queryLower) ||
+      syllabus.includes(queryLower)
     );
   });
 
@@ -153,18 +212,22 @@ const Subject = () => {
               </button>
             </div>
           ) : filteredSubjects.length > 0 ? (
-            filteredSubjects.map((subject, idx) => (
-              <Cards
-                key={subject._id || idx}
-                id={subject._id || idx}
-                title={subject.title || ""}
-                description={subject.description || ""}
-                syllabus={subject.syllabus || ""}
-                notes={subject.notes || []}
-                createdAt={subject.createdAt || ""}
-                onDelete={handleDeleteSubject}
-              />
-            ))
+            filteredSubjects.map((subject, idx) => {
+              console.log("Rendering subject card:", subject);
+              return (
+                <Cards
+                  key={subject._id || idx}
+                  id={subject._id || idx}
+                  title={subject.title || "Untitled Subject"}
+                  description={subject.description || "No description available"}
+                  syllabus={subject.subject_code || 
+                          (typeof subject.syllabus === 'string' ? subject.syllabus : "No syllabus code available")}
+                  notes={Array.isArray(subject.notes) ? subject.notes : []}
+                  createdAt={subject.createdAt || new Date().toISOString()}
+                  onDelete={handleDeleteSubject}
+                />
+              );
+            })
           ) : subjects.length === 0 ? (
             <div className="col-span-full text-center py-10">
               <p className="text-gray-500">
