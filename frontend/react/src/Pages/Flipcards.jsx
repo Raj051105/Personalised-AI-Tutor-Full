@@ -1,36 +1,99 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { UserContext } from "../Context/userContext";
 import BaseLayout from "../components/Layouts/BaseLayout";
+import axiosInstance, { axiosRag } from "../Utils/axiosInstance";
 
 const Flipcards = ({
   qaList = [
     { question: "What is the capital of France?", answer: "Paris" },
     { question: "What is 2 + 2?", answer: "4" },
-    { question: "What is the largest planet?", answer: "Jupiter" },
-    { question: "Who wrote Romeo and Juliet?", answer: "William Shakespeare" },
-    { question: "What is H2O commonly known as?", answer: "Water" },
-    { question: "What is the speed of light?", answer: "299,792,458 m/s" },
   ],
 }) => {
   const { user } = useContext(UserContext);
   const [selectedCard, setSelectedCard] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [qaListState, setQaListState] = useState(qaList);
+
+  // generation controls
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [topic, setTopic] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   const nextCard = () => {
     setShowAnswer(false);
-    setCurrentIndex((prev) => (prev + 1) % qaList.length);
+    setCurrentIndex((prev) => (prev + 1) % qaListState.length);
   };
 
   const prevCard = () => {
     setShowAnswer(false);
-    setCurrentIndex((prev) =>
-      prev === 0 ? qaList.length - 1 : prev - 1
-    );
+    setCurrentIndex((prev) => (prev === 0 ? qaListState.length - 1 : prev - 1));
   };
 
   const toggleCard = () => setShowAnswer(!showAnswer);
   const closeModal = () => setSelectedCard(null);
+
+  useEffect(() => {
+    // fetch available subjects from backend
+    async function fetchSubjects() {
+      try {
+  const res = await axiosRag.get("/subjects");
+        const data = res.data;
+        if (data?.subjects && data.subjects.length) {
+          setSubjects(data.subjects);
+          setSelectedSubject((prev) => prev || data.subjects[0]);
+        }
+      } catch (e) {
+        console.error("Failed to fetch subjects:", e.message || e);
+      }
+    }
+    fetchSubjects();
+  }, []);
+
+  const generateFlashcards = async (numCards = 8) => {
+    if (!selectedSubject) return;
+    setIsGenerating(true);
+    setElapsed(0);
+    try {
+      const q = topic || "";
+      const res = await axiosRag.post(
+        `/generate/flashcards/${encodeURIComponent(selectedSubject)}?query=${encodeURIComponent(
+          q
+        )}&num_cards=${numCards}`
+      );
+      console.debug("Flashcard generation response:", res?.data);
+      const data = res.data;
+      const cards = data.flashcards || data.cards || [];
+      // Map to {question, answer}
+      const mapped = cards.map((c, idx) => {
+        if (typeof c === "string") return { question: c, answer: "" };
+        return {
+          question:
+            c.question || c.front || c.prompt || c.q || c.question_text || `Card ${idx + 1}`,
+          answer: c.answer || c.back || c.a || c.answer_text || "",
+        };
+      });
+      setQaListState(mapped);
+      setSelectedCard(null);
+      setCurrentIndex(0);
+    } catch (e) {
+      console.error("Generate flashcards failed:", e?.response?.data || e.message || e);
+      setQaListState([]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isGenerating) {
+      setElapsed(0);
+      return;
+    }
+    const iv = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(iv);
+  }, [isGenerating]);
 
   return (
     <BaseLayout user={user} active={"flipcards"}>
@@ -45,9 +108,64 @@ const Flipcards = ({
             <div className="mt-2 w-20 h-1 bg-[#730FFF] rounded-full"></div>
           </div>
 
-          {/* Flipcards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {qaList.map((qa, index) => (
+          {/* Controls */}
+          <div className="flex items-center gap-3 mb-6">
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="border rounded p-2"
+            >
+              {subjects.length === 0 && <option value="">No subjects</option>}
+              {subjects.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+
+            <input
+              placeholder="Enter topic (optional)"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="border rounded p-2 w-64"
+            />
+
+            <button
+              onClick={() => generateFlashcards(8)}
+              className="px-4 py-2 bg-[#730FFF] text-white rounded-lg"
+              disabled={isGenerating || !selectedSubject}
+            >
+              {isGenerating ? "Generating…" : "Generate Flashcards"}
+            </button>
+            {/* elapsed timer and hint */}
+            {isGenerating && (
+              <div className="text-sm text-gray-600 ml-3">
+                Generating — this can take up to a minute. Elapsed: {elapsed}s
+              </div>
+            )}
+          </div>
+
+          {/* Empty state when no cards */}
+          {qaListState.length === 0 && !isGenerating && (
+            <div className="p-8 text-center text-gray-600">
+              <p className="mb-4">No flashcard content available yet.</p>
+              <p className="mb-4">Use the controls above to generate dynamic flashcards from your subject materials.</p>
+            </div>
+          )}
+
+          {/* Loading state while generating */}
+          {isGenerating && (
+            <div className="p-6 text-center text-gray-600">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-[#730FFF] mx-auto mb-4"></div>
+              <p className="font-medium">Generating flashcards — this can take 30–60 seconds.</p>
+              <p className="text-sm">Response will appear automatically when ready.</p>
+            </div>
+          )}
+
+          {/* Flashcards Grid - only show when we have cards and not generating */}
+          {qaListState.length > 0 && !isGenerating && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {qaListState.map((qa, index) => (
               <div
                 key={index}
                 className="bg-gray-200 rounded-xl p-5 border border-[#B38CFF] cursor-pointer hover:shadow-lg transform hover:scale-105 transition-all duration-300"
@@ -67,18 +185,19 @@ const Flipcards = ({
                     Question
                   </div>
                   <p className="text-sm text-gray-800 font-medium line-clamp-3">
-                    {qa.question.length > 50
+                    {qa.question && qa.question.length > 50
                       ? qa.question.substring(0, 50) + "..."
                       : qa.question}
                   </p>
                 </div>
-              </div>
-            ))}
-          </div>
+               </div>
+             ))}
+            </div>
+          )}
         </div>
 
         {/* MODAL */}
-        {selectedCard !== null && (
+        {selectedCard !== null && qaListState[currentIndex] && (
           <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900 bg-opacity-60 p-6">
             <div className="absolute inset-0" onClick={closeModal} />
 
@@ -106,9 +225,7 @@ const Flipcards = ({
               </h2>
 
               <p className="text-gray-800 mb-6 text-base leading-relaxed">
-                {showAnswer
-                  ? qaList[currentIndex].answer
-                  : qaList[currentIndex].question}
+                {showAnswer ? qaListState[currentIndex].answer : qaListState[currentIndex].question}
               </p>
 
               <button

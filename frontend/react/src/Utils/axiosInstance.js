@@ -1,9 +1,16 @@
 import axios from "axios";
-import { BASE_URL } from "./api_path";
+import { BASE_URL, RAG_URL } from "./api_path";
 
 const axiosInstance = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
+});
+
+// Separate axios instance for RAG (FastAPI) backend
+export const axiosRag = axios.create({
+    baseURL: RAG_URL,
+    // LLM generation can take time (30s+), increase timeout to 2 minutes
+    timeout: 120000,
 });
 
 axiosInstance.interceptors.request.use(
@@ -48,3 +55,6 @@ axiosInstance.interceptors.response.use(
 );
 
 export default axiosInstance;
+
+// also export rag instance as named export
+// usage: import axiosInstance, { axiosRag } from '../Utils/axiosInstance'

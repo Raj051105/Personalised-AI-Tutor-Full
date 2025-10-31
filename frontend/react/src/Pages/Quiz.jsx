@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from "react";
 import { UserContext } from "../Context/userContext";
 import BaseLayout from "../components/Layouts/BaseLayout";
+import axiosInstance, { axiosRag } from "../Utils/axiosInstance";
 
 const Quiz = () => {
   const { user } = useContext(UserContext);
@@ -10,6 +11,11 @@ const Quiz = () => {
   const [submitted, setSubmitted] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [score, setScore] = useState(null);
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [topic, setTopic] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -21,30 +27,37 @@ const Quiz = () => {
           options: ["Paris", "London", "Berlin", "Madrid"],
           correctAnswer: "Paris",
         },
-        {
-          id: 2,
-          question: "Select the prime numbers:",
-          type: "checkbox",
-          options: ["2", "3", "4", "6"],
-          correctAnswer: ["2", "3"],
-        },
-        {
-          id: 3,
-          question: "What is 5 + 7?",
-          type: "radio",
-          options: ["10", "11", "12", "13"],
-          correctAnswer: "12",
-        },
-        {
-          id: 4,
-          question: "Describe your learning experience with this platform:",
-          type: "paragraph",
-        },
       ]);
       setLoading(false);
     }, 600);
+
+    // fetch subjects
+    async function fetchSubjects() {
+      try {
+  const res = await axiosRag.get("/subjects");
+        const data = res.data;
+        if (data?.subjects && data.subjects.length) {
+          setSubjects(data.subjects);
+          setSelectedSubject((prev) => prev || data.subjects[0]);
+        }
+      } catch (e) {
+        console.error("Failed to fetch subjects:", e?.message || e);
+      }
+    }
+    fetchSubjects();
+
     return () => clearTimeout(timer);
   }, []);
+
+  // elapsed timer while generating
+  useEffect(() => {
+    if (!isGenerating) {
+      setElapsed(0);
+      return;
+    }
+    const iv = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(iv);
+  }, [isGenerating]);
 
   const handleChange = (id, value) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -142,6 +155,97 @@ const Quiz = () => {
             </div>
           ) : (
             <div className="p-6 space-y-8">
+              {/* Controls */}
+              <div className="flex items-center gap-3">
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="border rounded p-2"
+                >
+                  {subjects.length === 0 && <option value="">No subjects</option>}
+                  {subjects.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  placeholder="Enter topic (optional)"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  className="border rounded p-2 w-64"
+                />
+
+                <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    if (!selectedSubject) return;
+                    setIsGenerating(true);
+                    setElapsed(0);
+                    try {
+                      const res = await axiosRag.post(
+                        `/generate/mcqs/${encodeURIComponent(selectedSubject)}?query=${encodeURIComponent(
+                          topic || ""
+                        )}`
+                      );
+                      console.debug("MCQ generation response:", res?.data);
+                      const data = res.data;
+                      const mcqs = data.mcqs || data.mcq || data.mcqs_list || data.mcq_list || [];
+                      // Map to internal format used in this page
+                      const mapped = (mcqs || []).map((m, idx) => {
+                        // try multiple possible shapes
+                        const questionText =
+                          m.question || m.prompt || m.q || m.question_text || m.title || `Question ${idx + 1}`;
+                        const options = m.options || m.choices || m.opts || (m.answers ? Object.values(m.answers) : []) || [];
+                        const correctAnswer = m.correctAnswer || m.answer || m.correct || m.correct_answer || (m.correct_options ? m.correct_options : undefined);
+                        return {
+                          id: idx + 1,
+                          question: questionText,
+                          type: options && options.length > 1 ? "radio" : "paragraph",
+                          options: options,
+                          correctAnswer: correctAnswer,
+                        };
+                      });
+                      setQuestions(mapped);
+                      setAnswers({});
+                      setFeedback("");
+                    } catch (e) {
+                      console.error("Generate MCQs failed:", e?.response?.data || e.message || e);
+                      setQuestions([]);
+                    } finally {
+                      setIsGenerating(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#730FFF] text-white rounded-lg"
+                  disabled={!selectedSubject || isGenerating}
+                >
+                  {isGenerating ? "Generating…" : "Generate Quiz"}
+                </button>
+
+                {/* elapsed timer and hint */}
+                {isGenerating && (
+                  <div className="text-sm text-gray-600 ml-3">
+                    Generating — this can take up to a minute. Elapsed: {elapsed}s
+                  </div>
+                )}
+                </div>
+              </div>
+
+              {/* Empty lander when no questions */}
+              {questions.length === 0 && !isGenerating && (
+                <div className="p-8 text-center text-gray-600">
+                  <p className="mb-4">No quiz content available yet.</p>
+                  <p className="mb-4">Use the controls above to generate a dynamic quiz from your subject materials.</p>
+                </div>
+              )}
+              {isGenerating && (
+                <div className="p-6 text-center text-gray-600">
+                  <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-[#730FFF] mx-auto mb-4"></div>
+                  <p className="font-medium">Generating quiz — this can take 30–60 seconds.</p>
+                  <p className="text-sm">Response will appear automatically when ready.</p>
+                </div>
+              )}
               {feedback && !submitted && (
                 <div className="p-4 rounded-lg bg-yellow-100 text-yellow-800 font-semibold shadow-sm">
                   {feedback}
