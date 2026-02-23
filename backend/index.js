@@ -5,6 +5,7 @@ import connectDB from './Config/db.js';
 import authRoute from './Routes/auth.route.js';
 import subjectRoute from './Routes/user.route.js';
 import quizRoute from './Routes/quiz.route.js';
+import progressRoute from './Routes/topicProgress.route.js';
 dotenv.config();
 
 const app = express();
@@ -20,6 +21,7 @@ app.use(cors({
 app.use('/auth',authRoute);
 app.use('/subject', subjectRoute);
 app.use('/quiz', quizRoute);
+app.use('/progress', progressRoute);
 
 const start = async () => {
   try {

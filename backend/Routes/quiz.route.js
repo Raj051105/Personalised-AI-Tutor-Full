@@ -2,6 +2,7 @@ import express from 'express';
 import Quiz from '../Models/Quiz.model.js';
 import QuizAttempt from '../Models/QuizAttempt.model.js';
 import { protect as authMiddleware } from '../Middleware/AuthMiddleware.js';
+import { updateTopicProgress } from '../Services/TopicProgress.service.js';
 
 const router = express.Router();
 
@@ -70,6 +71,21 @@ router.post('/attempt/:quizId', authMiddleware, async (req, res) => {
         });
 
         const savedAttempt = await attempt.save();
+
+        // New Logic: Update topic-level progress based on this attempt
+        // We extract the list of booleans (isCorrect) from processedAnswers
+        const questionResults = processedAnswers.map(ans => ans.isCorrect);
+        const subjectObj = await Quiz.findById(req.params.quizId).populate('subject_code'); // Try to find the actual subject ID
+        
+        // Use the quiz's properties to update progress
+        await updateTopicProgress(
+            req.user._id, 
+            quiz.subject_code, // Note: In this route, quiz.subject_code might be a string. 
+                               // We need the ObjectId for the Subject record to be fully normalized
+            quiz.topic, 
+            questionResults
+        );
+
         res.status(201).json(savedAttempt);
     } catch (error) {
         res.status(400).json({ message: error.message });

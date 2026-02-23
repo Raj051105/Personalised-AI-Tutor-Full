@@ -61,14 +61,14 @@ Tracks student performance history.
 - **Answers Array:** Tracks `questionId`, `userAnswer`, and `isCorrect`.
 
 ### **TopicProgress Model (`TopicProgress.model.js`)**
-Tracks topic-level mastery for adaptive learning.
-- `user` (ObjectId, Ref: 'User'): Relationship.
-- `subject_code` (String, Required): Course identifier.
-- `topic` (String, Required): Matches the syllabus topic exactly.
-- `totalQuestions` (Number): Lifetime questions attempted.
-- `correctQuestions` (Number): Lifetime correct answers.
-- `recentAccuracy` (Number): Rolling average or last N accuracy.
-- `masteryScore` (Number): Progress from 0 to 1.
+Tracks topic-level mastery for adaptive learning using relational mapping.
+- `user` (ObjectId, Ref: 'User', Index: true): Relationship.
+- `subject` (ObjectId, Ref: 'Subject', Index: true): Relationship (Normalized).
+- `topic` (String, Required, Trim: true): Matches the syllabus topic exactly.
+- `totalQuestions` (Number, Min: 0): Lifetime questions attempted.
+- `correctQuestions` (Number, Min: 0): Lifetime correct answers.
+- `masteryScore` (Number, 0–1, Default: 0.5): Neutral starting baseline.
+- `recentAccuracy` (Number, 0–1): Rolling average or last N accuracy.
 - `currentDifficulty` (Enum): `easy`, `medium`, `hard`.
 - `lastPracticed` (Date): Most recent session.
 
