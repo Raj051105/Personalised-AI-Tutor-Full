@@ -60,6 +60,18 @@ Tracks student performance history.
 - `completed` (Boolean): Completion status.
 - **Answers Array:** Tracks `questionId`, `userAnswer`, and `isCorrect`.
 
+### **TopicProgress Model (`TopicProgress.model.js`)**
+Tracks topic-level mastery for adaptive learning.
+- `user` (ObjectId, Ref: 'User'): Relationship.
+- `subject_code` (String, Required): Course identifier.
+- `topic` (String, Required): Matches the syllabus topic exactly.
+- `totalQuestions` (Number): Lifetime questions attempted.
+- `correctQuestions` (Number): Lifetime correct answers.
+- `recentAccuracy` (Number): Rolling average or last N accuracy.
+- `masteryScore` (Number): Progress from 0 to 1.
+- `currentDifficulty` (Enum): `easy`, `medium`, `hard`.
+- `lastPracticed` (Date): Most recent session.
+
 ---
 
 ## 2. ChromaDB (Vector Search - Python RAG Engine)
