@@ -10,10 +10,10 @@ from ingest import ingest_all
 from retriever import get_context_scoped
 from mcq_generator import generate_mcqs
 from flashcard_generator import generate_flashcards
+from syllabus_extractor import extract_structured_syllabus
 
 # ====== Config ======
 DATA_DIR = Path("data")
-ALLOWED_SUBJECTS = ["CS3491", "MA3251"]  # extend as needed
 
 # Ensure base data dir exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -30,8 +30,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ====== Routes ======
 @app.get("/subjects")
 def list_subjects():
-    """List allowed subjects"""
-    return {"subjects": ALLOWED_SUBJECTS}
+    """List subjects that have folders in data/"""
+    if not DATA_DIR.exists():
+        return {"subjects": []}
+    return {"subjects": [d.name for d in DATA_DIR.iterdir() if d.is_dir()]}
 
 @app.post("/upload/{subject_code}")
 async def upload_pdf(subject_code: str,
@@ -39,8 +41,6 @@ async def upload_pdf(subject_code: str,
     file: UploadFile = File(...)
 ):
     """Upload a PDF to a given subject/category."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
     if category not in ["syllabus", "notes", "past_papers"]:
         raise HTTPException(status_code=400, detail="Invalid category")
     if not file.filename.lower().endswith(".pdf"):
@@ -60,18 +60,28 @@ async def upload_pdf(subject_code: str,
 def ingest_subject(subject_code: str):
     
     """Run ingestion for this subject (syllabus+notes+past_papers)."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
     ingest_all(subject_code)
 
     return {"status": "ingested", "subject_code": subject_code}
 
+@app.get("/extract-syllabus/{subject_code}")
+def get_structured_syllabus(subject_code: str):
+    """Parses existing syllabus PDF into JSON structure."""
+    syllabus_dir = DATA_DIR / subject_code / "syllabus"
+    if not syllabus_dir.exists():
+        raise HTTPException(status_code=404, detail="Syllabus directory not found")
+    
+    files = list(syllabus_dir.glob("*.pdf"))
+    if not files:
+        raise HTTPException(status_code=404, detail="No syllabus PDF found")
+    
+    # Process the most recent syllabus (usually only one)
+    structured = extract_structured_syllabus(files[0])
+    return {"subject_code": subject_code, "units": structured}
+
 @app.post("/generate/mcqs/{subject_code}")
 def generate_mcqs_api(subject_code: str, query: str):
     """Generate MCQs for a given subject/query from notes+syllabus."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
-
     context = get_context_scoped(query, subject_code, k=8, sources=["notes", "syllabus"])
     mcqs = generate_mcqs({"subject_code": subject_code}, context) or []
     print(mcqs)
@@ -80,9 +90,6 @@ def generate_mcqs_api(subject_code: str, query: str):
 @app.post("/generate/flashcards/{subject_code}")
 def generate_flashcards_api(subject_code: str, query: str, num_cards: int = 8):
     """Generate flashcards for a given subject/query from notes+syllabus."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
-
     context = get_context_scoped(query, subject_code, k=8, sources=["notes", "syllabus"])
     cards = generate_flashcards({"subject_code": subject_code}, context, num_cards) or []
     return {"subject_code": subject_code, "flashcards": cards}
@@ -92,9 +99,6 @@ def generate_flashcards_api(subject_code: str, query: str, num_cards: int = 8):
 @app.get("/status/{subject_code}")
 def get_subject_status(subject_code: str):
     """Check if a subject has been ingested and what files are available."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
-    
     # Check if vector database exists
     chroma_path = Path(f"chroma_dbs/{subject_code}")
     is_ingested = chroma_path.exists() and any(chroma_path.iterdir())
@@ -120,12 +124,6 @@ def get_subject_status(subject_code: str):
 @app.delete("/files/{subject_code}/{category}/{filename}")
 def delete_file(subject_code: str, category: str, filename: str):
     """Delete a specific uploaded file."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
-    
-    if category not in ["syllabus", "notes", "past_papers"]:
-        raise HTTPException(status_code=400, detail="Invalid category")
-    
     file_path = DATA_DIR / subject_code / category / filename
     
     if not file_path.exists():
@@ -145,9 +143,6 @@ def health_check():
 @app.post("/validate/query/{subject_code}")
 def validate_query(subject_code: str, query: str):
     """Validate if a query can generate meaningful results."""
-    if subject_code not in ALLOWED_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Invalid subject_code")
-    
     # Check if subject is ingested
     chroma_path = Path(f"chroma_dbs/{subject_code}")
     if not (chroma_path.exists() and any(chroma_path.iterdir())):

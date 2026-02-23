@@ -1,7 +1,7 @@
 import os
-import subprocess
 import json
 import re
+import requests
 from textwrap import dedent
 from config import OLLAMA_MODEL
 
@@ -16,9 +16,9 @@ def repair_json_string(bad_json: str) -> str:
     - Remove text before/after JSON block
     """
     # Extract the biggest JSON array found in output
-    match = re.search(r"\[.*\]", bad_json, re.DOTALL)
+    match = re.search(r"(\[.*\])", bad_json, re.DOTALL)
     if match:
-        json_part = match.group(0)
+        json_part = match.group(1)
     else:
         json_part = bad_json
 
@@ -94,24 +94,28 @@ def generate_mcqs(student_info: dict, context: str):
     Generate exactly 10 MCQs from the above context.
     """)
 
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
+            },
+            timeout=120
+        )
+        
+        if response.status_code != 200:
+            print(f"Error calling ollama API: {response.text}")
+            return []
 
-    proc = subprocess.Popen(
-        ["ollama", "run", OLLAMA_MODEL],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env
-    )
-    stdout, stderr = proc.communicate(prompt)
-
-    if stderr:
-        print("LLM stderr (sanitized):", stderr[:500])
+        result = response.json()
+        stdout = result.get("response", "")
+        
+    except Exception as e:
+        print(f"Failed to generate MCQs via Ollama API: {str(e)}")
+        return []
 
     # Attempt to parse JSON
     json_str = repair_json_string(stdout)
@@ -119,6 +123,7 @@ def generate_mcqs(student_info: dict, context: str):
         mcqs = json.loads(json_str)
     except json.JSONDecodeError:
         print("⚠️ LLM output was not valid JSON even after repairs.")
+        print("Raw Content:", stdout[:200])
         return []
 
     # Validate and clean the MCQs

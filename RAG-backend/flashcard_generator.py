@@ -1,7 +1,7 @@
 import os
-import subprocess
 import json
 import re
+import requests
 from textwrap import dedent
 from config import OLLAMA_MODEL
 
@@ -9,8 +9,8 @@ MAX_CONTEXT_CHARS = 12000  # safety guard
 
 def repair_json_string(bad_json: str) -> str:
     """Extract and repair common JSON issues from LLM output."""
-    match = re.search(r"\[.*\]", bad_json, re.DOTALL)
-    json_part = match.group(0) if match else bad_json
+    match = re.search(r"(\[.*\])", bad_json, re.DOTALL)
+    json_part = match.group(1) if match else bad_json
     json_part = re.sub(r"[\x00-\x1F\x7F]", " ", json_part)   # remove control chars
     json_part = re.sub(r",\s*(\]|\})", r"\1", json_part)     # remove trailing commas
     return json_part.strip()
@@ -93,25 +93,25 @@ def generate_flashcards(student_info: dict, context: list | dict | str, num_card
     Generate exactly {num_cards} flashcards from the above context.
     """)
 
-    # --- Run Ollama via stdin ---
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-
-    proc = subprocess.Popen(
-        ["ollama", "run", OLLAMA_MODEL],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env
-    )
-    stdout, stderr = proc.communicate(prompt)
-
-    if stderr:
-        print("LLM stderr (sanitized):", stderr[:500])
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
+            },
+            timeout=120
+        )
+        if response.status_code != 200:
+            print(f"Error calling ollama API: {response.text}")
+            return []
+        result = response.json()
+        stdout = result.get("response", "")
+    except Exception as e:
+        print(f"Failed to generate flashcards via Ollama API: {str(e)}")
+        return []
 
     # --- Repair and parse JSON ---
     json_str = repair_json_string(stdout)

@@ -25,4 +25,4 @@ CHUNK_OVERLAP   = 200
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Ollama LLM model
-OLLAMA_MODEL    = "llama3.1:8b"
+OLLAMA_MODEL    = "qwen2.5:7b-instruct-q4_K_M"

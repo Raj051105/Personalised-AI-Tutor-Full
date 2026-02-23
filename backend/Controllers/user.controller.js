@@ -83,7 +83,8 @@ export const createSubject = async (req, res) => {
             subject_code,
             createdBy: userId,
             syllabus: extractMeta(files.syllabus),
-            notes: extractMeta(files.notes)
+            notes: extractMeta(files.notes),
+            units: [] // Initialize empty
         };
 
         // Only add pastpaper if file exists and metadata is valid
@@ -107,6 +108,20 @@ export const createSubject = async (req, res) => {
 
         // Trigger RAG ingestion
         await axios.post(`http://127.0.0.1:8000/ingest/${subject_code}`);
+
+        // Extract and store structured syllabus
+        try {
+            console.log(`Extracting structured syllabus for ${subject_code}...`);
+            const syllabusResponse = await axios.get(`http://127.0.0.1:8000/extract-syllabus/${subject_code}`);
+            if (syllabusResponse.data && syllabusResponse.data.units) {
+                subject.units = syllabusResponse.data.units;
+                await subject.save();
+                console.log(`Structured syllabus saved for ${subject_code}`);
+            }
+        } catch (syllabusError) {
+            console.error('Failed to extract structured syllabus:', syllabusError.message);
+            // Non-critical error, don't fail the whole request
+        }
 
         res.status(201).json({
             message: 'Subject created and files uploaded successfully.',

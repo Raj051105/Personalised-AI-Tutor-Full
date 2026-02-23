@@ -19,7 +19,16 @@ const subjectSchema = new mongoose.Schema({
   notes: { type: fileMetadataSchema, required: true },
   
   // Optional file - IMPORTANT: don't define if not provided
-  pastpaper: { type: fileMetadataSchema, required: false }
+  pastpaper: { type: fileMetadataSchema, required: false },
+
+  // Structured syllabus extracted from PDF
+  units: [{
+    unitName: { type: String, required: true },
+    topics: [{
+      topicName: { type: String, required: true },
+      subtopics: [String]
+    }]
+  }]
 }, { 
   timestamps: true,
   // This prevents empty objects from being saved
