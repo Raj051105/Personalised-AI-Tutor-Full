@@ -1,58 +1,16 @@
 import os
 import re
+import json
+import requests
 from pathlib import Path
 from pypdf import PdfReader
+from textwrap import dedent
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from config import DATA_DIR, CHROMA_DIR, CHUNK_SIZE, CHUNK_OVERLAP, EMBEDDING_MODEL
-from utils.text_utils import is_junk
-from utils.ocr_utils import ocr_page
-
-BAD_PHRASES = {"lOMoARcPSD", "Downloaded by"}
-BIBLIO_HEADINGS = re.compile(r"(?i)^\s*(Text\s*Books?|References?)\s*:?\s*$")
-BIBLIO_LINE_PATTERNS = [
-    r"\bISBN\b", r"\bPublisher\b", r"\bEdition\b", r"\bAuthor(s)?\b",
-    r"\bText\s*Book\b", r"\bReference\b"
-]
-
-def clean_text(txt: str) -> str:
-    if not txt:
-        return ""
-    lines = txt.splitlines()
-    kept, skip_refs = [], False
-    for raw_line in lines:
-        line = raw_line.strip()
-        if BIBLIO_HEADINGS.match(line):
-            skip_refs = True
-            continue
-        if skip_refs:
-            if re.match(r"^[A-Z0-9 ]{5,}$", line) or re.match(r"^\d+[\.\)]", line):
-                skip_refs = False
-            else:
-                continue
-        if any(bad in line for bad in BAD_PHRASES):
-            continue
-        if any(re.search(pat, line, re.IGNORECASE) for pat in BIBLIO_LINE_PATTERNS):
-            continue
-        kept.append(line)
-
-    cleaned = "\n".join(kept)
-    cleaned = cleaned.replace("-\n", "").replace("\r\n", "\n").replace("\r", "\n")
-    cleaned = "\n".join(l.rstrip() for l in cleaned.split("\n"))
-    return cleaned.strip()
-
-def extract_text(pdf_path: Path) -> str:
-    reader = PdfReader(pdf_path)
-    pages_out = []
-    for i, page in enumerate(reader.pages, start=1):
-        txt = page.extract_text() or ""
-        txt = clean_text(txt)
-        if is_junk(txt):
-            txt = ocr_page(pdf_path, i)
-            txt = clean_text(txt)
-        pages_out.append(txt)
-    return "\n\n".join(pages_out)
+from config import DATA_DIR, CHROMA_DIR, CHUNK_SIZE, CHUNK_OVERLAP, EMBEDDING_MODEL, OLLAMA_MODEL
+from utils.text_utils import is_junk, extract_text
+from syllabus_extractor import extract_structured_syllabus
 
 def load_folder(folder: Path, tag: str):
     docs = []
@@ -67,37 +25,124 @@ def load_folder(folder: Path, tag: str):
     print(f"Loaded {len(docs)} documents from {tag}")
     return docs
 
+def tag_chunks_with_syllabus(chunks, syllabus_json, model_name):
+    """
+    Uses LLM to assign unit and topic metadata to each chunk based on the syllabus.
+    """
+    if not syllabus_json:
+        return [{"unit": "General", "topic": "General", "subtopic": ""}] * len(chunks)
+
+    # Prepare a compact syllabus summary for the LLM
+    syllabus_summary = []
+    for unit in syllabus_json:
+        unit_info = f"- {unit['unitName']}\n"
+        for topic in unit.get('topics', []):
+            unit_info += f"  * {topic['topicName']}\n"
+        syllabus_summary.append(unit_info)
+    syllabus_text = "\n".join(syllabus_summary)
+
+    tagged_metas = []
+    print(f"🏷️ Tagging {len(chunks)} chunks using {model_name}...")
+    
+    for i, chunk in enumerate(chunks):
+        if i % 10 == 0:
+            print(f"Processing chunk {i}/{len(chunks)}...")
+        
+        prompt = dedent(f"""
+        Categorize the following text chunk into the correct Unit and Topic from the provided syllabus.
+        
+        Syllabus Structure:
+        {syllabus_text}
+
+        Text Chunk:
+        \"\"\"{chunk[:500]}...\"\"\"
+
+        Output ONLY valid JSON with keys: "unit", "topic", "subtopic".
+        If it belongs to multiple or none, choose the best fit or "General".
+        """)
+
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json"
+                },
+                timeout=30
+            )
+            data = response.json()
+            tags = json.loads(data.get("response", "{}"))
+            tagged_metas.append({
+                "unit": tags.get("unit", "General"),
+                "topic": tags.get("topic", "General"),
+                "subtopic": tags.get("subtopic", "")
+            })
+        except:
+            tagged_metas.append({"unit": "General", "topic": "General", "subtopic": ""})
+
+    return tagged_metas
+
 def ingest_all(subject_code: str):
     subject_dir = DATA_DIR / subject_code
     subject_dir.mkdir(parents=True, exist_ok=True)
 
+    # 1. First, find and extract structured syllabus if available
+    syllabus_path = None
+    syllabus_dir = subject_dir / "syllabus"
+    if syllabus_dir.exists():
+        pdfs = list(syllabus_dir.glob("*.pdf"))
+        if pdfs:
+            syllabus_path = pdfs[0]
+    
+    structured_syllabus = []
+    if syllabus_path:
+        print(f"📜 Extracting syllabus structure for tagging...")
+        try:
+            structured_syllabus = extract_structured_syllabus(syllabus_path)
+        except Exception as e:
+            print(f"Failed to extract syllabus: {e}")
+
+    # 2. Load all docs
     all_docs = []
     all_docs += load_folder(subject_dir / "syllabus", "syllabus")
     all_docs += load_folder(subject_dir / "notes", "notes")
     all_docs += load_folder(subject_dir / "past_papers", "past_papers")
 
-    print("DATA_DIR =", DATA_DIR.resolve())
-    print("Looking for:", subject_dir.resolve())
-    print("Syllabus dir exists?", (subject_dir / "syllabus").exists())
-    print("Notes dir exists?", (subject_dir / "notes").exists())
-    print("Past_papers dir exists?", (subject_dir / "past_papers").exists())
-
+    # 3. Split into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    chunks, metas = [], []
+    raw_chunks, metas = [], []
     for d in all_docs:
-        for chunk in splitter.split_text(d["text"]):
+        file_chunks = splitter.split_text(d["text"])
+        for chunk in file_chunks:
             if chunk.strip():
-                chunks.append(chunk)
+                raw_chunks.append(chunk)
                 metas.append({
                     "subject_code": subject_code,
                     "source": d["source"],
                     "source_type": d["source_type"]
                 })
 
+    # 4. Tag chunks if syllabus is available
+    if structured_syllabus:
+        tags = tag_chunks_with_syllabus(raw_chunks, structured_syllabus, OLLAMA_MODEL)
+        for i, tag_data in enumerate(tags):
+            if i < len(metas):
+                metas[i].update(tag_data)
+    else:
+        for m in metas:
+            m.update({"unit": "General", "topic": "General", "subtopic": ""})
+
+
+
     persist_dir = CHROMA_DIR / subject_code
+    if persist_dir.exists():
+        import shutil
+        shutil.rmtree(persist_dir)
     persist_dir.mkdir(parents=True, exist_ok=True)
 
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-    db = Chroma.from_texts(chunks, embeddings, metadatas=metas, persist_directory=str(persist_dir))
-    print(f"✅ {len(chunks)} chunks stored in vector DB for {subject_code}")
+    db = Chroma.from_texts(raw_chunks, embeddings, metadatas=metas, persist_directory=str(persist_dir))
+    print(f"✅ {len(raw_chunks)} chunks stored with topic tagging for {subject_code}")
     return db

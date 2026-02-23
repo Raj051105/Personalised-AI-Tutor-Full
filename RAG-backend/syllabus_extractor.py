@@ -5,7 +5,7 @@ import requests
 from textwrap import dedent
 from pathlib import Path
 from config import OLLAMA_MODEL
-from ingest import extract_text
+from utils.text_utils import extract_text
 
 def repair_syllabus_json(bad_json: str) -> list:
     """
