@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useMemo } from "react";
 import { UserContext } from "../Context/userContext";
 import BaseLayout from "../components/Layouts/BaseLayout";
 import axiosInstance, { axiosRag } from "../Utils/axiosInstance";
@@ -17,9 +17,11 @@ const Flipcards = ({
 
   // generation controls
   const [subjects, setSubjects] = useState([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
-  const [topic, setTopic] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [selectedUnits, setSelectedUnits] = useState([]);
+  const [selectedTopics, setSelectedTopics] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   const nextCard = () => {
@@ -39,11 +41,19 @@ const Flipcards = ({
     // fetch available subjects from backend
     async function fetchSubjects() {
       try {
-  const res = await axiosRag.get("/subjects");
+        const res = await axiosInstance.get("subject/get-all-subject");
         const data = res.data;
         if (data?.subjects && data.subjects.length) {
           setSubjects(data.subjects);
-          setSelectedSubject((prev) => prev || data.subjects[0]);
+          
+          // If we have a selected subject, find it in the new data to update with latest units/topics
+          if (selectedSubject) {
+            const updated = data.subjects.find(s => s._id === selectedSubject._id);
+            if (updated) setSelectedSubject(updated);
+          } else {
+            // Auto-select first subject if none selected
+            setSelectedSubject(data.subjects[0]);
+          }
         }
       } catch (e) {
         console.error("Failed to fetch subjects:", e.message || e);
@@ -52,14 +62,83 @@ const Flipcards = ({
     fetchSubjects();
   }, []);
 
-  const generateFlashcards = async (numCards = 8) => {
+  // Sync units/topics when subject changes
+  useEffect(() => {
+    setSelectedUnits([]);
+    setSelectedTopics([]);
+  }, [selectedSubject]);
+
+  const toggleUnit = (unit) => {
+    setSelectedUnits((prev) => {
+      const isSelected = prev.some((u) => u.unitName === unit.unitName);
+      if (isSelected) {
+        return prev.filter((u) => u.unitName !== unit.unitName);
+      } else {
+        return [...prev, unit];
+      }
+    });
+    // Remove topics associated with unselected units if user unselects
+    // But for simplicity, we'll let the user manage topics or reset
+  };
+
+  const toggleTopic = (topic) => {
+    setSelectedTopics((prev) => {
+      const isSelected = prev.some((t) => t.topicName === topic.topicName);
+      if (isSelected) {
+        return prev.filter((t) => t.topicName !== topic.topicName);
+      } else {
+        return [...prev, topic];
+      }
+    });
+  };
+
+  const syncSyllabus = async () => {
+    if (!selectedSubject) return;
+    setIsSyncing(true);
+    try {
+      const res = await axiosInstance.post(`subject/refresh-syllabus/${selectedSubject._id}`);
+      if (res.data && res.data.units) {
+        // Update both the subject list and the current selection
+        const updatedUnits = res.data.units;
+        const updatedSubject = { ...selectedSubject, units: updatedUnits };
+        setSelectedSubject(updatedSubject);
+        setSubjects(prev => prev.map(s => s._id === selectedSubject._id ? updatedSubject : s));
+        setSelectedUnits([]);
+        setSelectedTopics([]);
+        alert(`Syllabus for ${selectedSubject.subject_code} synchronized successfully!`);
+      }
+    } catch (e) {
+      console.error("Sync failed:", e.response?.data || e.message);
+      alert("AI Extraction failed. Please ensure the local RAG engine (Ollama) is running.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Get topics from all selected units
+  const availableTopics = useMemo(() => {
+    if (!selectedUnits.length) return [];
+    const allTopics = [];
+    selectedUnits.forEach((u) => {
+      if (u.topics) allTopics.push(...u.topics);
+    });
+    return allTopics;
+  }, [selectedUnits]);
+
+  const generateFlashcards = async (numCards = 10) => {
     if (!selectedSubject) return;
     setIsGenerating(true);
     setElapsed(0);
     try {
-      const q = topic || "";
+      // If topics are selected, use them. Otherwise use unit names.
+      const queryItems = selectedTopics.length > 0 
+        ? selectedTopics.map(t => t.topicName)
+        : selectedUnits.map(u => u.unitName);
+      
+      const q = queryItems.join(", ") || "";
+      const subjectCode = selectedSubject.subject_code;
       const res = await axiosRag.post(
-        `/generate/flashcards/${encodeURIComponent(selectedSubject)}?query=${encodeURIComponent(
+        `/generate/flashcards/${encodeURIComponent(subjectCode)}?query=${encodeURIComponent(
           q
         )}&num_cards=${numCards}`
       );
@@ -108,41 +187,115 @@ const Flipcards = ({
             <div className="mt-2 w-20 h-1 bg-[#730FFF] rounded-full"></div>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center gap-3 mb-6">
-            <select
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              className="border rounded p-2"
-            >
-              {subjects.length === 0 && <option value="">No subjects</option>}
-              {subjects.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+          {/* Controls - Tabs */}
+          <div className="flex flex-col gap-4 mb-8">
+            {/* Subject Tabs */}
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between items-center pr-4">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Subjects</span>
+                {selectedSubject && (
+                  <button 
+                    onClick={syncSyllabus}
+                    disabled={isSyncing}
+                    className="text-[10px] font-bold text-[#730FFF] hover:underline flex items-center gap-1 group"
+                  >
+                    <span className={isSyncing ? "animate-spin" : "group-hover:rotate-12 transition-transform"}>🔄</span>
+                    {isSyncing ? "Syncing..." : "Sync Syllabus with AI"}
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {subjects.length === 0 && <span className="text-sm text-gray-400 italic">No subjects available.</span>}
+                {subjects.map((s) => (
+                  <button
+                    key={s._id}
+                    onClick={() => setSelectedSubject(s)}
+                    className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${
+                      selectedSubject?._id === s._id
+                        ? "bg-[#730FFF] text-white shadow-md"
+                        : "bg-white text-gray-600 hover:bg-gray-200 border border-gray-200"
+                    }`}
+                  >
+                    {s.title}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <input
-              placeholder="Enter topic (optional)"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              className="border rounded p-2 w-64"
-            />
-
-            <button
-              onClick={() => generateFlashcards(8)}
-              className="px-4 py-2 bg-[#730FFF] text-white rounded-lg"
-              disabled={isGenerating || !selectedSubject}
-            >
-              {isGenerating ? "Generating…" : "Generate Flashcards"}
-            </button>
-            {/* elapsed timer and hint */}
-            {isGenerating && (
-              <div className="text-sm text-gray-600 ml-3">
-                Generating — this can take up to a minute. Elapsed: {elapsed}s
+            {/* Unit Tabs */}
+            {selectedSubject && (
+              <div className="flex flex-col gap-2 animate-fadeIn transition-all duration-300">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Units (Multi-select)</span>
+                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                  {selectedSubject.units?.length > 0 ? (
+                    selectedSubject.units.map((u, idx) => {
+                      const isSelected = selectedUnits.some(su => su.unitName === u.unitName);
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => toggleUnit(u)}
+                          className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${
+                            isSelected
+                              ? "bg-purple-600 text-white shadow-md"
+                              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+                          }`}
+                        >
+                          {u.unitName}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">No units extracted for this subject.</span>
+                  )}
+                </div>
               </div>
             )}
+
+            {/* Topic Tabs */}
+            {selectedUnits.length > 0 && (
+              <div className="flex flex-col gap-2 animate-fadeIn transition-all duration-300">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Topics (Multi-select)</span>
+                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                  {availableTopics.length > 0 ? (
+                    availableTopics.map((t, idx) => {
+                      const isSelected = selectedTopics.some(st => st.topicName === t.topicName);
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => toggleTopic(t)}
+                          className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${
+                            isSelected
+                              ? "bg-purple-500 text-white shadow-md"
+                              : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
+                          }`}
+                        >
+                          {t.topicName}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">No topics found for the selected units.</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Action Row */}
+            <div className="flex items-center gap-4 mt-2">
+              <button
+                onClick={() => generateFlashcards(10)}
+                className="px-6 py-2.5 bg-[#730FFF] text-white rounded-xl font-bold hover:bg-purple-700 transition-all disabled:opacity-50 disabled:bg-gray-400 shadow-lg shadow-purple-200"
+                disabled={isGenerating || !selectedSubject}
+              >
+                {isGenerating ? "Magic in progress..." : "✨ Generate Flashcards"}
+              </button>
+              {isGenerating && (
+                <div className="flex items-center gap-2 text-sm text-purple-600 font-medium animate-pulse">
+                   <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
+                   Crunching notes... ({elapsed}s)
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Empty state when no cards */}
@@ -211,7 +364,7 @@ const Flipcards = ({
 
             {/* Card Counter */}
             <div className="mb-3 text-gray-200 text-sm z-10">
-              Card {currentIndex + 1} of {qaList.length}
+              Card {currentIndex + 1} of {qaListState.length}
             </div>
 
             {/* Flipcard Body - forced white background */}

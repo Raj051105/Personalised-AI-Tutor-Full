@@ -151,6 +151,42 @@ export const createSubject = async (req, res) => {
     }
 };
 
+// Re-extract syllabus from RAG backend for an existing subject
+export const refreshSyllabus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const subject = await Subject.findById(id);
+        
+        if (!subject) {
+            return res.status(404).json({ message: "Subject not found" });
+        }
+
+        console.log(`Refreshing structured syllabus for ${subject.subject_code} (${id})...`);
+        
+        const syllabusResponse = await axios.get(`http://127.0.0.1:8000/extract-syllabus/${subject.subject_code}`);
+        
+        if (syllabusResponse.data && syllabusResponse.data.units) {
+            subject.units = syllabusResponse.data.units;
+            await subject.save();
+            
+            return res.status(200).json({
+                message: "Syllabus refreshed successfully",
+                units: subject.units
+            });
+        } else {
+            return res.status(400).json({
+                message: "RAG backend returned no structured syllabus"
+            });
+        }
+    } catch (error) {
+        console.error("Error refreshing syllabus:", error.message);
+        res.status(500).json({
+            message: "Failed to refresh syllabus",
+            error: error.message
+        });
+    }
+};
+
 // Other functions remain the same...
 export const getAllSubjects = async (req, res) => {
     try {
