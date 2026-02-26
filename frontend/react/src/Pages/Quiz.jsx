@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import { UserContext } from "../Context/userContext";
 import BaseLayout from "../components/Layouts/BaseLayout";
 import axiosInstance, { axiosRag } from "../Utils/axiosInstance";
@@ -13,9 +13,12 @@ const Quiz = () => {
   const [feedback, setFeedback] = useState("");
   const [score, setScore] = useState(null);
   const [subjects, setSubjects] = useState([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [selectedUnits, setSelectedUnits] = useState([]);
+  const [selectedTopics, setSelectedTopics] = useState([]);
   const [topic, setTopic] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   
   // New states for quiz history and management
@@ -32,7 +35,7 @@ const Quiz = () => {
     async function fetchInitialData() {
       try {
         // Fetch subjects
-        const subjectsRes = await axiosRag.get("/subjects");
+        const subjectsRes = await axiosInstance.get("subject/get-all-subject");
         const data = subjectsRes.data;
         if (data?.subjects && data.subjects.length) {
           setSubjects(data.subjects);
@@ -51,6 +54,66 @@ const Quiz = () => {
     fetchInitialData();
   }, []);
 
+  // Sync units/topics when subject changes
+  useEffect(() => {
+    setSelectedUnits([]);
+    setSelectedTopics([]);
+  }, [selectedSubject]);
+
+  const toggleUnit = (unit) => {
+    setSelectedUnits((prev) => {
+      const isSelected = prev.some((u) => u.unitName === unit.unitName);
+      if (isSelected) {
+        return prev.filter((u) => u.unitName !== unit.unitName);
+      } else {
+        return [...prev, unit];
+      }
+    });
+  };
+
+  const toggleTopic = (topicItem) => {
+    setSelectedTopics((prev) => {
+      const isSelected = prev.some((t) => t.topicName === topicItem.topicName);
+      if (isSelected) {
+        return prev.filter((t) => t.topicName !== topicItem.topicName);
+      } else {
+        return [...prev, topicItem];
+      }
+    });
+  };
+
+  const syncSyllabus = async () => {
+    if (!selectedSubject) return;
+    setIsSyncing(true);
+    try {
+      const res = await axiosInstance.post(`subject/refresh-syllabus/${selectedSubject._id}`);
+      if (res.data && res.data.units) {
+        const updatedUnits = res.data.units;
+        const updatedSubject = { ...selectedSubject, units: updatedUnits };
+        setSelectedSubject(updatedSubject);
+        setSubjects(prev => prev.map(s => s._id === selectedSubject._id ? updatedSubject : s));
+        setSelectedUnits([]);
+        setSelectedTopics([]);
+        alert(`Syllabus for ${selectedSubject.subject_code} synchronized successfully!`);
+      }
+    } catch (e) {
+      console.error("Sync failed:", e.response?.data || e.message);
+      alert("AI Extraction failed. Please ensure the local RAG engine (Ollama) is running.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Get topics from all selected units
+  const availableTopics = useMemo(() => {
+    if (!selectedUnits.length) return [];
+    const allTopics = [];
+    selectedUnits.forEach((u) => {
+      if (u.topics) allTopics.push(...u.topics);
+    });
+    return allTopics;
+  }, [selectedUnits]);
+
   // Fetch saved quizzes when subject changes
   useEffect(() => {
     if (!selectedSubject) return;
@@ -58,7 +121,7 @@ const Quiz = () => {
     async function fetchSavedQuizzes() {
       setLoadingQuizzes(true);
       try {
-        const res = await axiosInstance.get(API_PATH.QUIZ.GET_BY_SUBJECT(selectedSubject));
+        const res = await axiosInstance.get(API_PATH.QUIZ.GET_BY_SUBJECT(selectedSubject.subject_code));
         setSavedQuizzes(res.data);
       } catch (e) {
         console.error("Failed to fetch quizzes:", e?.message || e);
@@ -197,7 +260,7 @@ const Quiz = () => {
     if (!activeQuizId) {
       try {
         const payload = {
-          subject_code: selectedSubject,
+          subject_code: selectedSubject?.subject_code,
           topic: topic || (questions[0]?.question || 'Generated Quiz'),
           questions: questions,
         };
@@ -296,93 +359,185 @@ const Quiz = () => {
           ) : (
             <div className="p-6 space-y-8">
               {/* Controls */}
-              <div className="flex items-center gap-3">
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="border rounded p-2"
-                >
-                  {subjects.length === 0 && <option value="">No subjects</option>}
-                  {subjects.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Select Subject</label>
+                    <select
+                      value={selectedSubject?._id || ""}
+                      onChange={(e) => {
+                        const sub = subjects.find(s => s._id === e.target.value);
+                        setSelectedSubject(sub);
+                      }}
+                      className="border-2 border-gray-200 rounded-xl p-2.5 min-w-[200px] focus:border-[#730FFF] outline-none transition-all font-medium"
+                    >
+                      {subjects.length === 0 && <option value="">No subjects found</option>}
+                      {subjects.map((s) => (
+                        <option key={s._id} value={s._id}>
+                          {s.subject_name} ({s.subject_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <input
-                  placeholder="Enter topic (optional)"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  className="border rounded p-2 w-64"
-                />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Syllabus Sync</label>
+                    <button
+                      onClick={syncSyllabus}
+                      disabled={isSyncing || !selectedSubject}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all ${
+                        isSyncing 
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
+                          : "bg-[#730FFF]/10 text-[#730FFF] hover:bg-[#730FFF] hover:text-white border-2 border-[#730FFF]/20"
+                      }`}
+                    >
+                      {isSyncing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
+                          Syncing Units...
+                        </>
+                      ) : (
+                        "Sync AI Plan"
+                      )}
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-3">
-                <button
-                  onClick={async () => {
-                    if (!selectedSubject) return;
-                    setIsGenerating(true);
-                    setElapsed(0);
-                    try {
-                      const res = await axiosRag.post(
-                        `/generate/mcqs/${encodeURIComponent(selectedSubject)}?query=${encodeURIComponent(
-                          topic || ""
-                        )}`
-                      );
-                      console.debug("MCQ generation response:", res?.data);
-                      const data = res.data;
-                      const mcqs = data.mcqs || data.mcq || data.mcqs_list || data.mcq_list || [];
-                      // Map to internal format used in this page
-                      const mapped = (mcqs || []).map((m, idx) => {
-                        // try multiple possible shapes
-                        const questionText =
-                          m.question || m.prompt || m.q || m.question_text || m.title || `Question ${idx + 1}`;
-                        const options = m.options || m.choices || m.opts || (m.answers ? Object.values(m.answers) : []) || [];
-                        const correctAnswer = m.correctAnswer || m.answer || m.correct || m.correct_answer || (m.correct_options ? m.correct_options : undefined);
-                        // ensure we keep correct_option if LLM provides letters (A/B/C)
-                        const correct_option = m.correct_option || m.correctOption || (typeof correctAnswer === 'string' && /^[A-D,a-d]$/.test(correctAnswer.trim()) ? correctAnswer.trim().toUpperCase() : undefined);
+                  <div className="flex flex-col gap-1 ml-auto">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Generate</label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={async () => {
+                          if (!selectedSubject) return;
+                          setIsGenerating(true);
+                          setElapsed(0);
+                          try {
+                            const queryItems = selectedTopics.length > 0 
+                              ? selectedTopics.map(t => t.topicName)
+                              : selectedUnits.map(u => u.unitName);
+                            
+                            const q = queryItems.join(", ") || "";
+                            const subjectCode = selectedSubject.subject_code;
 
-                        // Map letter option to actual answer text for storage
-                        let mappedCorrectAnswer = correctAnswer;
-                        if (correct_option && options.length > 0) {
-                          const idx = correct_option.charCodeAt(0) - 65; // A=0, B=1, etc
-                          if (idx >= 0 && idx < options.length) {
-                            mappedCorrectAnswer = options[idx];
+                            const res = await axiosRag.post(
+                              `/generate/mcqs/${encodeURIComponent(subjectCode)}?query=${encodeURIComponent(
+                                q
+                              )}`
+                            );
+                            console.debug("MCQ generation response:", res?.data);
+                            const data = res.data;
+                            const mcqs = data.mcqs || data.mcq || data.mcqs_list || data.mcq_list || [];
+                            // Map to internal format used in this page
+                            const mapped = (mcqs || []).map((m, idx) => {
+                              const questionText =
+                                m.question || m.prompt || m.q || m.question_text || m.title || `Question ${idx + 1}`;
+                              const options = m.options || m.choices || m.opts || (m.answers ? Object.values(m.answers) : []) || [];
+                              const correctAnswer = m.correctAnswer || m.answer || m.correct || m.correct_answer || (m.correct_options ? m.correct_options : undefined);
+                              const correct_option = m.correct_option || m.correctOption || (typeof correctAnswer === 'string' && /^[A-D,a-d]$/.test(correctAnswer.trim()) ? correctAnswer.trim().toUpperCase() : undefined);
+
+                              let mappedCorrectAnswer = correctAnswer;
+                              if (correct_option && options.length > 0) {
+                                const idx_opt = correct_option.charCodeAt(0) - 65;
+                                if (idx_opt >= 0 && idx_opt < options.length) {
+                                  mappedCorrectAnswer = options[idx_opt];
+                                }
+                              }
+
+                              return {
+                                id: idx + 1,
+                                question: questionText,
+                                type: options && options.length > 1 ? "radio" : "paragraph",
+                                options: options,
+                                correctAnswer: mappedCorrectAnswer,
+                                correct_option: correct_option,
+                              };
+                            });
+                            setQuestions(mapped);
+                            setAnswers({});
+                            setFeedback("");
+                            setTopic(q); // Store current query as topic for saving
+                            setActiveQuizId(null);
+                            setStartTime(Date.now());
+                          } catch (e) {
+                            console.error("Generate MCQs failed:", e?.response?.data || e.message || e);
+                            setQuestions([]);
+                          } finally {
+                            setIsGenerating(false);
                           }
-                        }
+                        }}
+                        className="px-6 py-2.5 bg-[#730FFF] text-white rounded-xl font-bold hover:bg-[#6000FF] shadow-lg shadow-[#730FFF]/30 transition-all disabled:opacity-50"
+                        disabled={!selectedSubject || isGenerating || (selectedUnits.length === 0 && selectedTopics.length === 0)}
+                      >
+                        {isGenerating ? "Generating Quiz..." : "Start AI Quiz"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-                        return {
-                          id: idx + 1,
-                          question: questionText,
-                          type: options && options.length > 1 ? "radio" : "paragraph",
-                          options: options,
-                          correctAnswer: mappedCorrectAnswer,
-                          correct_option: correct_option,
-                        };
-                      });
-                      setQuestions(mapped);
-                      setAnswers({});
-                      setFeedback("");
-                    } catch (e) {
-                      console.error("Generate MCQs failed:", e?.response?.data || e.message || e);
-                      setQuestions([]);
-                    } finally {
-                      setIsGenerating(false);
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#730FFF] text-white rounded-lg"
-                  disabled={!selectedSubject || isGenerating}
-                >
-                  {isGenerating ? "Generating…" : "Generate Quiz"}
-                </button>
+                {/* New Unit/Topic selection UI */}
+                {selectedSubject?.units?.length > 0 && (
+                  <div className="space-y-4 pt-4 border-t border-gray-100">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-[#730FFF]/10 text-[#730FFF] flex items-center justify-center text-xs">1</span>
+                        Select Units for Quiz
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedSubject.units.map((unit) => {
+                          const isSelected = selectedUnits.some(u => u.unitName === unit.unitName);
+                          return (
+                            <button
+                              key={unit.unitName}
+                              onClick={() => toggleUnit(unit)}
+                              className={`px-4 py-2 rounded-full text-sm font-semibold transition-all border-2 ${
+                                isSelected 
+                                  ? "bg-[#730FFF] text-white border-[#730FFF]" 
+                                  : "bg-white text-gray-600 border-gray-200 hover:border-[#730FFF]/50"
+                              }`}
+                            >
+                              {unit.unitName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                {/* elapsed timer and hint */}
-                {isGenerating && (
-                  <div className="text-sm text-gray-600 ml-3">
-                    Generating — this can take up to a minute. Elapsed: {elapsed}s
+                    {availableTopics.length > 0 && (
+                      <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-[#730FFF]/10 text-[#730FFF] flex items-center justify-center text-xs">2</span>
+                          Narrow down by Topics (Optional)
+                        </h4>
+                        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                          {availableTopics.map((topicItem) => {
+                            const isSelected = selectedTopics.some(t => t.topicName === topicItem.topicName);
+                            return (
+                              <button
+                                key={topicItem.topicName}
+                                onClick={() => toggleTopic(topicItem)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                                  isSelected 
+                                    ? "bg-[#A77BFF] text-white border-[#A77BFF]" 
+                                    : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                                }`}
+                              >
+                                {topicItem.topicName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                </div>
+                
+                {isGenerating && (
+                  <div className="flex items-center gap-3 p-4 bg-[#730FFF]/5 rounded-xl border border-[#730FFF]/20 animate-pulse">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#730FFF] border-t-transparent"></div>
+                    <p className="text-[#730FFF] font-medium text-sm">
+                      Crafting your personalized quiz... Elapsed: {elapsed}s
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Empty lander and Quiz History (only) */}
