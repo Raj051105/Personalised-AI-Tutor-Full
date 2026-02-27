@@ -2,16 +2,16 @@ import React, { useContext, useState, useEffect } from "react";
 import { UserContext } from "../Context/userContext";
 import BaseLayout from "../components/Layouts/BaseLayout";
 import UnitModal from "../components/Modal/UnitModal";
-import { CircleFadingPlus, Search } from "lucide-react";
+import { CircleFadingPlus, Search, BarChart3, Radar } from "lucide-react";
 import Cards from "../components/Cards/Cards";
 import { API_PATH } from "../Utils/api_path";
 import axiosInstance from "../Utils/axiosInstance";
+import MasteryRadarChart from "../components/Analytics/MasteryRadarChart";
+import TopicBarChart from "../components/Analytics/TopicBarChart";
+import { MOCK_MASTERY_DATA } from "../Utils/mockMasteryData";
 
 const Subject = () => {
-  console.log("Subject component rendering");
-  
   const { user } = useContext(UserContext);
-  console.log("UserContext value:", { user });
   
   const [query, setQuery] = useState("");
   const [subjects, setSubjects] = useState([]);
@@ -19,17 +19,16 @@ const Subject = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // NEW: State for Analytics
+  const [selectedSubjectId, setSelectedSubjectId] = useState("CS3491");
+  const [selectedUnit, setSelectedUnit] = useState(null);
+
+  const currentMasteryData = MOCK_MASTERY_DATA[selectedSubjectId] || MOCK_MASTERY_DATA["CS3491"];
+
   // Component lifecycle and state changes
   useEffect(() => {
-    console.log("Subject component mounted or updated");
-    console.log("Current state:", {
-      user,
-      subjects,
-      loading,
-      error,
-      isModalOpen
-    });
-  });
+    fetchSubjects();
+  }, []);
 
   const handleAddUnit = () => setIsModalOpen(true);
   const handleCloseModal = () => setIsModalOpen(false);
@@ -175,6 +174,88 @@ const Subject = () => {
               size={18}
             />
           </div>
+        </div>
+
+        {/* NEW: Mastery Analytics Section */}
+        <div className="mt-16 mb-12">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="p-3 bg-purple-100 rounded-2xl text-[#730FFF]">
+                        <Radar size={24} />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-black text-gray-800 uppercase italic leading-none">Mastery Analytics</h2>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Laminar Flow Intelligence Layer</p>
+                    </div>
+                </div>
+
+                {/* Subject Selector */}
+                <div className="flex items-center gap-3 bg-white p-2 pl-4 rounded-2xl border-2 border-gray-100 shadow-sm">
+                    <span className="text-[10px] font-black uppercase text-gray-400">Viewing Data For:</span>
+                    <select 
+                        value={selectedSubjectId}
+                        onChange={(e) => {
+                            setSelectedSubjectId(e.target.value);
+                            setSelectedUnit(null); // Reset drill-down
+                        }}
+                        className="bg-gray-50 border-none text-sm font-black text-[#730FFF] focus:ring-0 cursor-pointer rounded-xl px-4 py-2 uppercase italic"
+                    >
+                        {Object.keys(MOCK_MASTERY_DATA).map(id => (
+                            <option key={id} value={id}>{id} - {MOCK_MASTERY_DATA[id].subjectName}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                {/* Radar Chart Card */}
+                <div className="bg-white p-8 rounded-[32px] border-2 border-gray-100 shadow-xl">
+                    <div className="flex justify-between items-start mb-6">
+                        <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Unit Overview</h3>
+                        <span className="text-[10px] font-black bg-gray-100 px-3 py-1 rounded-full text-gray-500">{selectedSubjectId} - ANALYTICS</span>
+                    </div>
+                    <MasteryRadarChart 
+                        data={currentMasteryData} 
+                        onUnitClick={(unit) => setSelectedUnit(unit)} 
+                    />
+                    <p className="mt-6 text-center text-xs font-bold text-gray-400 italic">
+                        * Click on a label to drill down into specific topic mastery
+                    </p>
+                </div>
+
+                {/* Topic Bar Chart Card */}
+                <div className="bg-white p-8 rounded-[32px] border-2 border-gray-100 shadow-xl overflow-hidden relative">
+                    {selectedUnit ? (
+                        <>
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">{selectedUnit.unitName.split(':')[0]} Topics</h3>
+                                    <p className="text-[10px] font-bold text-[#730FFF] uppercase">Granular Performance Analysis</p>
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedUnit(null)}
+                                    className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter"
+                                >
+                                    CLEAR SELECTION ✕
+                                </button>
+                            </div>
+                            <div className="h-[300px]">
+                                <TopicBarChart unit={selectedUnit} />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-10">
+                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 text-gray-300">
+                                <BarChart3 size={32} />
+                            </div>
+                            <h3 className="text-gray-400 font-black uppercase text-sm">Select a Unit to view Details</h3>
+                            <p className="text-[11px] text-gray-300 font-bold mt-2 leading-relaxed">
+                                Our AI calculates mastery based on your <br/> Quiz attempts and Flashcard recall history.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
 
         {/* Add Unit Button */}

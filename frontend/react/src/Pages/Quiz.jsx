@@ -30,6 +30,16 @@ const Quiz = () => {
   const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const [expandedQuizDetails, setExpandedQuizDetails] = useState({});
 
+  // NEW: State for Practice Mode Integration
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const practiceTopic = params.get('topic');
+    if (practiceTopic) {
+      setTopic(practiceTopic);
+      // Auto-focus the custom topic input if needed or trigger generation
+    }
+  }, []);
+
   // Fetch subjects and quiz history on mount
   useEffect(() => {
     async function fetchInitialData() {
